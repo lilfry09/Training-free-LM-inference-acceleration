@@ -17,8 +17,8 @@
 \title{Reproducible Training-Free Inference Acceleration on Pythia-70M}
 
 \author{%
-  Anonymous Student(s) \\
-  Course Final Project \\
+  Ruoyu Fu \\
+  NLP Course Final Project \\
   Code: \href{https://github.com/lilfry09/Training-free-LM-inference-acceleration}{GitHub repository}
 }
 
@@ -28,7 +28,7 @@
 \maketitle
 
 \begin{abstract}
-Efficient inference is a practical bottleneck for autoregressive language models because attention computation and the KV cache grow with context length. This report studies training-free inference modifications on Pythia-70M: a post-hoc grouped-query attention (GQA) approximation and two KV cache compression strategies implemented with KVPress, Knorm and StreamingLLM. We evaluate exact teacher-forced perplexity, cached next-token perplexity, time to first token (TTFT), time per output token (TPOT), and throughput on WikiText-103 and a PG-19 sample. The main result is mixed but informative: StreamingLLM-style KV compression improves WikiText throughput by 21.7--27.6\% while preserving a reasonable cached-PPL score, whereas the post-hoc GQA approximation severely degrades perplexity and does not reliably accelerate inference. On PG-19, all compression variants slow down in our CPU-only runtime, showing that algorithmic cache reduction can be dominated by Python hook and gather overhead. The full experiment is reproducible from the submitted code with a single PowerShell script.
+Efficient inference is a practical bottleneck for autoregressive language models because attention computation and the KV cache grow with context length. This work studies training-free inference modifications on Pythia-70M: a post-hoc grouped-query attention (GQA) approximation and two KV cache compression strategies implemented with KVPress, Knorm and StreamingLLM. We evaluate exact teacher-forced perplexity, cached next-token perplexity, time to first token (TTFT), time per output token (TPOT), and throughput on WikiText-103 and a PG-19 sample. StreamingLLM-style KV compression improves WikiText throughput by 21.7--27.6\% while preserving a reasonable cached-PPL score, whereas the post-hoc GQA approximation severely degrades perplexity and does not reliably accelerate inference. On PG-19, all compression variants slow down in our CPU-only runtime, showing that algorithmic cache reduction can be dominated by Python hook and gather overhead. The experiments can be reproduced with the scripts included in the repository.
 \end{abstract}
 
 \section{Introduction}
@@ -37,7 +37,7 @@ Autoregressive decoding repeatedly evaluates a transformer while maintaining a k
 
 This project focuses on methods that can be reproduced without training a new model. We use Pythia-70M \citep{biderman2023pythia}, a small GPT-NeoX model, as the common backbone. The assignment asks for both quality and speed evaluation on datasets such as WikiText and PG-19, so we report two complementary quality metrics. First, exact perplexity is computed in the standard teacher-forced way and is not affected by KVPress, because KVPress acts on generation caches rather than full-context forward passes. Second, cached perplexity evaluates next-token prediction after a prefill pass whose KV cache may be compressed. This second metric is the appropriate quality signal for KVPress in this implementation.
 
-Our contribution is a reproducible comparison and an honest negative-result analysis. We show that post-hoc GQA is not a safe drop-in acceleration method for a model trained with standard multi-head attention, while KV cache compression can help on some contexts but is sensitive to the runtime environment.
+The main contribution is a reproducible comparison under a CPU-only course environment. The results show that post-hoc GQA is not a reliable drop-in acceleration method for a model trained with standard multi-head attention, while KV cache compression can help on some contexts but is sensitive to runtime overhead.
 
 \section{Methods}
 

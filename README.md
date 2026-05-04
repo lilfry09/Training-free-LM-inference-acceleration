@@ -1,15 +1,13 @@
-# Final Project Runner
-
-GitHub repository: https://github.com/lilfry09/Training-free-LM-inference-acceleration
+# Training-free LM Inference Acceleration
 
 ## 目录说明
 
-- `models/`: 模型文件（已包含 `pythia-70m`）
-- `datasets/`: 数据集（`wikitext-103-raw-v1` 与 `pg19_samples`）
+- `models/`: 本地模型目录，默认使用 `pythia-70m`，不随仓库提交
+- `datasets/`: 本地数据目录，包含 `wikitext-103-raw-v1` 与 `pg19_samples`，不随仓库提交
 - `src/`: 评测与方法实现
 - `scripts/`: 一键运行脚本
 - `outputs/`: 指标输出 JSON
-- `notes/`: 记录和论文草稿
+- `notes/`: 论文源码与 PDF
 
 ## 快速开始
 
@@ -33,7 +31,7 @@ pip install -r requirements.txt
 - `kv_cache_stats`（仅 `kvpress` 会有压缩事件）
 - `peak_memory_mb`（仅 CUDA）
 
-说明：
+指标说明：
 
 - `ppl_metrics` 是 teacher-forced exact PPL，不应用 KVPress 压缩，用于和传统语言模型评测保持一致。
 - `cache_ppl_metrics` 是 cached autoregressive next-token PPL，KVPress 会先压缩 prefill 阶段的 KV cache，再用压缩后的 cache 预测后续真实 token；论文中应用这个指标讨论 KVPress 的质量影响。
@@ -72,7 +70,7 @@ pip install -r requirements.txt
 - `outputs/comparison_speed.csv`
 - `outputs/comparison_speed.md`
 
-## Reproduce paper results
+## 复现实验
 
 所有命令都在 `finalproj` 目录下运行。
 
@@ -97,7 +95,7 @@ pip install -r requirements.txt
 - cached PPL：`CachedPplContextLen=512`, `CachedPplEvalTokens=256`
 - 速度上下文：`SpeedContextLens=128,512,1024`
 - 生成长度：`GenNewTokens=64`
-- 当前环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为论文主实验。
+- 当前实验环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为主实验结果。
 
 ## 简短结果报告
 
