@@ -1,0 +1,5 @@
+torch==2.6.0
+transformers==4.56.2
+datasets==3.6.0
+kvpress==0.5.3
+safetensors==0.6.2

@@ -1,0 +1,32 @@
+# Local model checkpoints and datasets are too large for GitHub.
+models/
+datasets/
+data/
+
+# Python caches and local environments.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# LaTeX build intermediates. Keep report.tex, report.pdf, and neurips_2025.sty.
+notes/*.aux
+notes/*.log
+notes/*.out
+notes/*.toc
+notes/*.fls
+notes/*.fdb_latexmk
+notes/*.synctex.gz
+notes/tmp_render/
+
+# Old exploratory outputs kept locally but not used by the paper tables.
+outputs/comparison_baseline_vs_kvpress_knorm_r0.5.*
+outputs/comparison_mha_vs_gqa.*
+outputs/metrics_kvpress_pg19_test.json
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

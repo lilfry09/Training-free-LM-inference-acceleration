@@ -1,0 +1,342 @@
+{
+  "mode": "kvpress",
+  "dataset": "pg19",
+  "split": "test",
+  "device": "cpu",
+  "dtype": "float32",
+  "attn_implementation": "sdpa",
+  "gqa_kv_heads": null,
+  "kvpress_method": "streamingllm",
+  "kvpress_compression_ratio": 0.5,
+  "kvpress_n_sink": 4,
+  "ppl_metrics": {
+    "ppl": 33.573871413736256,
+    "nll_sum": 14388.798583984375,
+    "tokens": 4095
+  },
+  "cache_ppl_metrics": {
+    "ppl": 29.486056914473217,
+    "nll_sum": 866.2828811893705,
+    "tokens": 256,
+    "context_len": 512,
+    "requested_eval_tokens": 256
+  },
+  "speed_metrics": [
+    {
+      "context_len": 128,
+      "ttft_sec": 0.3608966000028886,
+      "tpot_sec": 0.10403416031742439,
+      "throughput_tok_per_sec": 9.255177045968486,
+      "generated_tokens": 64,
+      "sample_output_len": 129
+    },
+    {
+      "context_len": 512,
+      "ttft_sec": 1.156322100025136,
+      "tpot_sec": 0.0953982682530916,
+      "throughput_tok_per_sec": 8.930548658062094,
+      "generated_tokens": 64,
+      "sample_output_len": 513
+    },
+    {
+      "context_len": 1024,
+      "ttft_sec": 2.6654862000141293,
+      "tpot_sec": 0.09929420634926785,
+      "throughput_tok_per_sec": 7.174066574336898,
+      "generated_tokens": 64,
+      "sample_output_len": 1025
+    }
+  ],
+  "kv_cache_stats": {
+    "summary": {
+      "num_events": 42,
+      "before_len_min": 128,
+      "before_len_max": 1024,
+      "after_len_min": 64,
+      "after_len_max": 512,
+      "avg_compression_ratio_actual": 0.5,
+      "by_before_len": [
+        {
+          "before_len": 512,
+          "after_len_min": 256,
+          "after_len_max": 256,
+          "num_events": 18
+        },
+        {
+          "before_len": 128,
+          "after_len_min": 64,
+          "after_len_max": 64,
+          "num_events": 12
+        },
+        {
+          "before_len": 1024,
+          "after_len_min": 512,
+          "after_len_max": 512,
+          "num_events": 12
+        }
+      ]
+    },
+    "events": [
+      {
+        "layer_idx": 0,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 128,
+        "after_len": 64,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 512,
+        "after_len": 256,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 0,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 1,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 2,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 3,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 4,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      },
+      {
+        "layer_idx": 5,
+        "before_len": 1024,
+        "after_len": 512,
+        "compression_ratio_actual": 0.5
+      }
+    ]
+  },
+  "peak_memory_mb": null,
+  "eval_notes": [
+    "ppl_metrics is teacher-forced exact PPL and does not apply KVPress cache compression.",
+    "cache_ppl_metrics uses cached autoregressive teacher forcing; KVPress compresses the prefill cache before scoring continuation tokens.",
+    "Speed metrics are single-run CPU measurements unless device is CUDA; interpret small differences cautiously.",
+    "KVPress uses method=streamingllm, compression_ratio=0.5, n_sink=4."
+  ],
+  "timestamp": "2026-05-02 23:52:51"
+}

@@ -1,0 +1,63 @@
+{
+  "mode": "gqa",
+  "dataset": "pg19",
+  "split": "test",
+  "device": "cpu",
+  "dtype": "float32",
+  "attn_implementation": "sdpa",
+  "gqa_kv_heads": 2,
+  "kvpress_method": null,
+  "kvpress_compression_ratio": null,
+  "kvpress_n_sink": null,
+  "ppl_metrics": {
+    "ppl": 816.6922560583414,
+    "nll_sum": 27458.04931640625,
+    "tokens": 4095
+  },
+  "cache_ppl_metrics": {
+    "ppl": 776.8782098328415,
+    "nll_sum": 1703.7526000589132,
+    "tokens": 256,
+    "context_len": 512,
+    "requested_eval_tokens": 256
+  },
+  "speed_metrics": [
+    {
+      "context_len": 128,
+      "ttft_sec": 0.09202690003439784,
+      "tpot_sec": 0.03824153333248216,
+      "throughput_tok_per_sec": 25.587272890660962,
+      "generated_tokens": 64,
+      "sample_output_len": 129
+    },
+    {
+      "context_len": 512,
+      "ttft_sec": 1.1728871000232175,
+      "tpot_sec": 0.11251395714325121,
+      "throughput_tok_per_sec": 7.746996271616154,
+      "generated_tokens": 64,
+      "sample_output_len": 513
+    },
+    {
+      "context_len": 1024,
+      "ttft_sec": 2.9025250999839045,
+      "tpot_sec": 0.12637113333339728,
+      "throughput_tok_per_sec": 5.891066901217447,
+      "generated_tokens": 64,
+      "sample_output_len": 1025
+    }
+  ],
+  "kv_cache_stats": {
+    "summary": {
+      "num_events": 0
+    },
+    "events": []
+  },
+  "peak_memory_mb": null,
+  "eval_notes": [
+    "ppl_metrics is teacher-forced exact PPL and does not apply KVPress cache compression.",
+    "cache_ppl_metrics uses cached autoregressive teacher forcing; KVPress compresses the prefill cache before scoring continuation tokens.",
+    "Speed metrics are single-run CPU measurements unless device is CUDA; interpret small differences cautiously."
+  ],
+  "timestamp": "2026-05-02 23:47:48"
+}
