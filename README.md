@@ -2,8 +2,8 @@
 
 ## 目录说明
 
-- `models/`: 本地模型目录，默认使用 `pythia-70m`，不随仓库提交
-- `datasets/`: 本地数据目录，包含 `wikitext-103-raw-v1` 与 `pg19_samples`，不随仓库提交
+- `models/`: 本地模型目录，默认使用 `pythia-70m`
+- `datasets/`: 本地数据目录，包含 `wikitext-103-raw-v1` 与 `pg19_samples`
 - `src/`: 评测与方法实现
 - `scripts/`: 一键运行脚本
 - `outputs/`: 指标输出 JSON
