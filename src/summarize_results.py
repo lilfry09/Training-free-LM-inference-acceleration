@@ -67,7 +67,7 @@ def write_markdown_table(path: Path, title: str, rows: list[dict], fieldnames: l
 def build_quality_rows(results: list[dict]) -> list[dict]:
     rows = []
     for result in results:
-        exact = result.get("ppl_metrics") or {}
+        chunked = result.get("ppl_metrics") or {}
         cached = result.get("cache_ppl_metrics") or {}
         kv_summary = (result.get("kv_cache_stats") or {}).get("summary") or {}
         rows.append(
@@ -75,8 +75,8 @@ def build_quality_rows(results: list[dict]) -> list[dict]:
                 "dataset": result.get("dataset"),
                 "split": result.get("split"),
                 "method": method_label(result),
-                "exact_ppl": exact.get("ppl"),
-                "exact_tokens": exact.get("tokens"),
+                "chunked_ppl": chunked.get("ppl"),
+                "chunked_tokens": chunked.get("tokens"),
                 "cache_ppl": cached.get("ppl"),
                 "cache_tokens": cached.get("tokens"),
                 "cache_context_len": cached.get("context_len"),
@@ -123,8 +123,8 @@ def main():
         "dataset",
         "split",
         "method",
-        "exact_ppl",
-        "exact_tokens",
+        "chunked_ppl",
+        "chunked_tokens",
         "cache_ppl",
         "cache_tokens",
         "cache_context_len",

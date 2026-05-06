@@ -16,7 +16,7 @@ def _kv_reduce_mean(x: torch.Tensor, kv_heads: int) -> torch.Tensor:
     if heads % kv_heads != 0:
         raise ValueError(f"num_heads={heads} must be divisible by kv_heads={kv_heads}")
     group_size = heads // kv_heads
-    x = x.view(batch, kv_heads, group_size, seq_len, dim).mean(dim=2)
+    x = x.contiguous().view(batch, kv_heads, group_size, seq_len, dim).mean(dim=2)
     return x
 
 
@@ -35,8 +35,23 @@ def _grouped_attention_forward(
     if query_heads % kv_heads != 0:
         raise ValueError(f"query_heads={query_heads} must be divisible by kv_heads={kv_heads}")
 
+    if head_mask is None and not output_attentions:
+        causal_mask = attention_mask[:, :, :, :key_len] if attention_mask is not None and attention_mask.ndim == 4 else None
+        is_causal = query_len > 1 and causal_mask is None and getattr(module, "is_causal", True)
+        attn_output = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=causal_mask,
+            dropout_p=0.0 if not module.training else module.attention_dropout,
+            is_causal=is_causal,
+            scale=module.scaling,
+            enable_gqa=query_heads != kv_heads,
+        )
+        return attn_output.transpose(1, 2).contiguous(), None
+
     group_size = query_heads // kv_heads
-    grouped_query = query.view(batch, kv_heads, group_size, query_len, head_dim)
+    grouped_query = query.contiguous().view(batch, kv_heads, group_size, query_len, head_dim)
     scores = torch.einsum("bkgld,bksd->bkgls", grouped_query, key) * module.scaling
 
     if attention_mask is not None:
@@ -45,14 +60,14 @@ def _grouped_attention_forward(
 
     weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(query.dtype)
     if head_mask is not None:
-        flat_weights = weights.view(batch, query_heads, query_len, key_len)
+        flat_weights = weights.contiguous().view(batch, query_heads, query_len, key_len)
         flat_weights = flat_weights * head_mask
-        weights = flat_weights.view(batch, kv_heads, group_size, query_len, key_len)
+        weights = flat_weights.contiguous().view(batch, kv_heads, group_size, query_len, key_len)
 
     weights = F.dropout(weights, p=0.0 if not module.training else module.attention_dropout, training=module.training)
     attn_output = torch.einsum("bkgls,bksd->bkgld", weights, value)
-    attn_output = attn_output.reshape(batch, query_heads, query_len, head_dim).transpose(1, 2).contiguous()
-    attn_weights = weights.view(batch, query_heads, query_len, key_len) if output_attentions else None
+    attn_output = attn_output.contiguous().view(batch, query_heads, query_len, head_dim).transpose(1, 2).contiguous()
+    attn_weights = weights.contiguous().view(batch, query_heads, query_len, key_len) if output_attentions else None
     return attn_output, attn_weights
 
 

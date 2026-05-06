@@ -1,4 +1,4 @@
-# Training-free LM Inference Acceleration
+# Training-Free LM Inference Acceleration
 
 ## 目录说明
 
@@ -58,13 +58,13 @@ python .\src\prepare_assets.py --project_root .
 
 - `ppl_metrics` 是 chunked teacher-forced PPL：在前 `4096` tokens 上每 `512` tokens 重置一次上下文，不应用 KVPress 压缩，用于比较 baseline/GQA。
 - `cache_ppl_metrics` 是 cached autoregressive next-token PPL，KVPress 会先压缩 prefill 阶段的 KV cache，再用压缩后的 cache 预测后续真实 token；论文中应用这个指标讨论 KVPress 的质量影响。
-- 速度指标使用手动 greedy prefill/decode。`TTFT` 是从 prefill 开始到选出第一个 token 的 wall time；`TPOT` 是后续 decode 时间除以剩余生成 token 数；`throughput` 是 `64` 个生成 token 除以端到端时间。
+- 速度指标使用手动 greedy prefill/decode。`TTFT` 是从 prefill 开始到选出第一个 token 的 wall time；`TPOT` 是后续 decode 时间除以剩余 `63` 个生成 token 数；`throughput` 是 `64` 个生成 token 除以端到端时间。默认先 warm-up 1 次，再测 3 次并输出 mean/std/raw runs。
 
 ## 运行模式
 
 - `baseline`: 默认 SDPA attention
 - `flash`: 若 CUDA 可用则尝试 `flash_attention_2`，否则自动回退
-- `gqa`: 推理时把 8 个 K/V heads 分组平均为 2 个 cached KV heads，并用自定义 grouped attention 直接读取 reduced-KV cache
+- `gqa`: 推理时把 8 个 K/V heads 分组平均为指定数量的 cached KV heads，并用 SDPA grouped attention 直接读取 reduced-KV cache；主实验使用 `GqaKvHeads=2`
 - `gqa_flash`: 组合模式（CUDA+flash 才会生效）
 - `kvpress`: KV 压缩模式（当前适配 `knorm` 与 `streamingllm`）
 
@@ -95,6 +95,26 @@ python .\src\prepare_assets.py --project_root .
 - `outputs/comparison_speed.csv`
 - `outputs/comparison_speed.md`
 
+补充 ablation 和 sanity check：
+
+```powershell
+.\scripts\run_ablations.ps1
+```
+
+该脚本会额外跑：
+
+- KVPress-StreamingLLM compression ratio：`0.25`, `0.5`, `0.75`（WikiText, 512-token prompt）
+- GQA sanity：`8`, `4`, `2` KV heads（WikiText, 512-token prompt）
+
+并生成：
+
+- `outputs/comparison_kvpress_ablation.csv`
+- `outputs/comparison_kvpress_ablation.md`
+- `outputs/comparison_gqa_sanity.csv`
+- `outputs/comparison_gqa_sanity.md`
+- `outputs/comparison_memory.csv`
+- `outputs/comparison_memory.md`
+
 ## 复现实验
 
 所有命令都在 `finalproj` 目录下运行。
@@ -123,6 +143,14 @@ python .\src\prepare_assets.py --project_root .
 - 速度重复：`SpeedWarmupRuns=1`, `SpeedRepeats=3`
 - 当前实验环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为主实验结果。
 
+本机记录的硬件环境：
+
+- CPU：Intel Core Ultra 7 155H，16 cores / 22 logical processors
+- RAM：32 GB
+- OS：Windows NT 10.0.26200.0
+- PyTorch CPU threads：16
+- CUDA：不可用
+
 cached PPL sanity check：
 
 ```powershell
@@ -137,12 +165,18 @@ cached PPL sanity check：
 
 - `outputs/comparison_quality.md`
 - `outputs/comparison_speed.md`
+- `outputs/comparison_kvpress_ablation.md`
+- `outputs/comparison_gqa_sanity.md`
+- `outputs/comparison_memory.md`
 - `outputs/cache_ppl_sanity_wikitext_test.md`
 
 主要结论（3-run mean）：
 
-- `GQA` 是负结果：实现已改为真实 reduced-KV cache，`gqa_cache_stats` 显示每层 cache shape 为 `[1, 2, 512, 64]`，但无训练地把 Pythia-70M 改成 2 KV heads 会显著损害质量。WikiText chunked PPL 从 `63.72` 上升到 `2289.96`，PG-19 chunked PPL 从 `33.57` 上升到 `797.49`。
+- `GQA` 是负结果：实现已改为真实 reduced-KV cache，`gqa_cache_stats` 显示每层 cache shape 为 `[1, 2, 512, 64]`，但无训练地把 Pythia-70M 改成 2 KV heads 会显著损害质量。WikiText chunked PPL 从 `63.72` 上升到 `2258.01`，PG-19 chunked PPL 从 `33.57` 上升到 `816.70`。
+- `GQA sanity`：`8` KV heads 能复现 baseline PPL（WikiText chunked PPL `63.72`，cached PPL `13.09`），说明 grouped-attention 路径本身可对齐；降到 `4/2` KV heads 后质量迅速崩坏。
 - `KVPress-Knorm` 在 WikiText context length `128/512` 下 throughput 分别提升约 `31.3% / 49.7%`，但在 `1024` 下下降约 `14.3%`。
 - `KVPress-StreamingLLM` 在 WikiText context length `128/512` 下 throughput 分别提升约 `35.3% / 50.3%`，但在 `1024` 下下降约 `17.5%`；在 PG-19 `1024` 下提升约 `8.7%`。
+- `KVPress ratio ablation`（WikiText, 512 prompt）显示 CPU 结果非单调：StreamingLLM ratio `0.25/0.5/0.75` 的 cached PPL 分别为 `22.92/61.30/62.61`，throughput 分别为 `20.88/59.62/13.93` tok/s。
+- 近似 KV cache memory 使用公式 `layers * kv_heads * cache_tokens * head_dim * 2(K/V) * 4 bytes`。Pythia-70M 在 512 tokens、8 KV heads 下约为 `12 MB`；GQA-2KV 或 StreamingLLM ratio `0.75` 约为 `3 MB`。
 - WikiText baseline 的 cached PPL 较低不是 cache 评分明显错误：同一 continuation slice 上普通 teacher-forced PPL 为 `13.088025`，cached PPL 为 `13.088739`。
 - 结论采用保守表述：KV cache compression 在部分 CPU 设置下能提升生成速度，但收益依赖数据集、上下文长度和实现开销；reduced-KV GQA 在未训练适配下不适合作为成功加速方法。

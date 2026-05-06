@@ -320,7 +320,7 @@ def compute_gqa_cache_stats(model, input_ids: torch.Tensor, context_len: int) ->
 
 def build_eval_notes(args, device: str) -> list[str]:
     notes = [
-        "ppl_metrics is teacher-forced exact PPL and does not apply KVPress cache compression.",
+        "ppl_metrics is chunked teacher-forced PPL and does not apply KVPress cache compression.",
         "cache_ppl_metrics uses cached autoregressive teacher forcing; KVPress compresses the prefill cache before scoring continuation tokens.",
         "Speed metrics use manual greedy prefill/decode with warmup and repeated runs; TTFT is prefill-to-first-token wall time, TPOT is decode time divided by generated tokens after the first token.",
     ]

@@ -16,8 +16,14 @@
 \usepackage{lineno}
 
 \linenumbers
+\setlength{\textfloatsep}{8pt plus 1pt minus 2pt}
+\setlength{\floatsep}{6pt plus 1pt minus 2pt}
 
-\title{Reproducible Training-Free Inference Acceleration on Pythia-70M}
+\makeatletter
+\renewcommand{\@noticestring}{NLP Course Final Project Report}
+\makeatother
+
+\title{Training-Free KV Cache Compression and GQA Conversion for Pythia-70M Inference Acceleration}
 
 \author{%
   Ruoyu Fu \\
@@ -31,14 +37,14 @@
 \maketitle
 
 \begin{abstract}
-Efficient inference is a practical bottleneck for autoregressive language models because attention computation and the KV cache grow with context length. This work studies training-free inference modifications on Pythia-70M: a reduced-KV grouped-query attention (GQA) conversion and two KV cache compression strategies implemented with KVPress, Knorm and StreamingLLM. We evaluate chunked teacher-forced perplexity, cached next-token perplexity, time to first token (TTFT), time per output token (TPOT), and throughput on WikiText-103 and a PG-19 sample. KVPress improves throughput in several CPU settings, especially WikiText at 128/512-token contexts, while the training-free GQA conversion stores only 2 KV heads but severely degrades perplexity and does not provide a usable speed-quality tradeoff. The experiments can be reproduced with the scripts included in the repository.
+Efficient inference is a practical bottleneck for autoregressive language models because attention computation and KV-cache storage grow with context length. This report studies two training-free modifications to Pythia-70M: KVPress cache compression and a reduced-KV grouped-query attention (GQA) conversion. We evaluate chunked teacher-forced perplexity, cached next-token perplexity, TTFT, TPOT, throughput, cache size, a KVPress compression-ratio ablation, and a GQA KV-head sanity check on WikiText-103 and a PG-19 sample in a CPU-only environment. KVPress gives useful speedups in some settings, most clearly WikiText at 128/512-token contexts, but not consistently. The GQA conversion stores fewer KV heads but sharply degrades perplexity and is not a reliable drop-in accelerator.
 \end{abstract}
 
 \section{Introduction}
 
 Autoregressive decoding repeatedly evaluates a transformer while maintaining a key-value (KV) cache for previous tokens. This cache avoids recomputing attention states, but its memory and attention cost scale with sequence length. Recent efficient-inference work therefore attacks the problem from several directions: using fewer KV heads \citep{ainslie2023gqa}, more IO-aware attention kernels \citep{dao2022flashattention}, or compressing the KV cache during generation \citep{xiao2023streamingllm,kvpress2024}.
 
-This project focuses on methods that can be reproduced without training a new model. We use Pythia-70M \citep{biderman2023pythia}, a small GPT-NeoX model, as the common backbone. The assignment asks for both quality and speed evaluation on datasets such as WikiText and PG-19, so we report two complementary quality metrics. First, chunked perplexity is computed with teacher forcing on fixed 512-token chunks and is not affected by KVPress, because KVPress acts on generation caches rather than full-context forward passes. Second, cached perplexity evaluates next-token prediction after a prefill pass whose KV cache may be compressed. This second metric is the appropriate quality signal for KVPress in this implementation.
+This project focuses on modifications that can be reproduced without training a new model. We use Pythia-70M \citep{biderman2023pythia}, a small GPT-NeoX model, as the common backbone. The assignment asks for both quality and speed evaluation on datasets such as WikiText and PG-19, so we report two complementary quality metrics. Chunked perplexity is computed with teacher forcing on fixed 512-token chunks and is not affected by KVPress, because KVPress acts on generation caches rather than full-context forward passes. Cached perplexity evaluates next-token prediction after a prefill pass whose KV cache may be compressed; this is the relevant quality metric for the KVPress experiments here.
 
 The main contribution is a reproducible comparison under a CPU-only course environment. The results show that reduced-KV GQA is not a reliable drop-in conversion for a model trained with standard multi-head attention, while KV cache compression can help on some contexts but is sensitive to runtime overhead.
 
@@ -48,17 +54,17 @@ The main contribution is a reproducible comparison under a CPU-only course envir
 The baseline loads the local \texttt{EleutherAI/pythia-70m} checkpoint through Hugging Face Transformers and uses the default scaled dot-product attention (SDPA) implementation. No weights are changed.
 
 \paragraph{Reduced-KV GQA conversion.}
-Pythia-70M uses 8 attention heads. In the GQA variant, we compute the original query, key, and value states, average the key/value heads into 2 grouped KV heads, and run custom grouped attention without materializing repeated K/V states. The dynamic cache therefore stores tensors with shape \texttt{[batch, 2, seq, head\_dim]} rather than 8 KV heads. This is still a training-free conversion rather than the fine-tuned GQA recipe of \citet{ainslie2023gqa}, so quality degradation is expected.
+Pythia-70M uses 8 attention heads. In the GQA variant, we compute the original query, key, and value states, average the key/value heads into fewer grouped KV heads, and update the dynamic cache with those reduced tensors. The main run uses 2 cached KV heads, so each layer stores \texttt{[batch, 2, seq, head\_dim]} instead of \texttt{[batch, 8, seq, head\_dim]}. Attention is evaluated with PyTorch SDPA grouped attention, without explicitly materializing an expanded KV cache in our implementation. This is a training-free conversion rather than the fine-tuned GQA recipe of \citet{ainslie2023gqa}, so it is treated as a stress test rather than a competitive GQA recipe.
 
 \paragraph{KVPress cache compression.}
-We evaluate two KVPress modes at compression ratio 0.5. Knorm keeps tokens with larger key norm scores. StreamingLLM keeps attention-sink tokens and recent tokens, following the observation that early sink tokens are important for stable long-context decoding \citep{xiao2023streamingllm}. In both cases, compression is applied after the prefill stage via forward hooks on GPT-NeoX attention layers. The implementation records per-layer cache lengths before and after compression, e.g., 512 cached positions are compressed to 256.
+We evaluate two KVPress modes at compression ratio 0.5. Knorm keeps tokens with larger key-norm scores. StreamingLLM keeps attention-sink tokens and recent tokens, following the observation that early sink tokens are important for stable long-context decoding \citep{xiao2023streamingllm}. Compression is applied after prefill via forward hooks on GPT-NeoX attention layers. The code records per-layer cache lengths before and after compression; for example, ratio 0.5 compresses a 512-position cache to 256 positions.
 
 \paragraph{Metrics.}
-All methods use the same token windows. Chunked PPL uses the first 4096 tokens and resets context every 512 tokens: each chunk input predicts the next token inside that chunk, with no KV state carried across chunk boundaries. Cached PPL uses tokens 0--511 as prefill context and scores tokens 512--767 one by one with ground-truth continuation tokens fed back into the cache; KVPress compresses the prefill cache before this scoring step, while baseline and GQA keep their normal caches. KV events count layer-level KVPress compression calls from cached-PPL scoring plus warm-up and measured speed prefills. Speed uses the first 128, 512, or 1024 tokens as prompt and manually decodes 64 greedy tokens. Each setting has one warm-up and three measured runs. TTFT is wall time from prefill start to selecting the first token; TPOT is decode time divided by the remaining generated tokens; throughput is generated tokens per end-to-end second.
+All methods use the same token windows. Chunked PPL uses the first 4096 tokens and resets context every 512 tokens: each chunk input predicts the next token inside that chunk, with no KV state carried across chunk boundaries. Cached PPL uses tokens 0--511 as prefill context and scores tokens 512--767 one by one with ground-truth continuation tokens fed back into the cache; KVPress compresses the prefill cache before this scoring step, while baseline and GQA keep their normal caches. Speed uses the first 128, 512, or 1024 tokens as prompt and manually decodes 64 greedy tokens. Each setting has one warm-up and three measured runs. TTFT is wall time from prefill start to selecting the first token; TPOT is decode time divided by the remaining 63 generated tokens; throughput is 64 generated tokens per end-to-end second. Changes smaller than one standard deviation of the compared throughput measurements are marked as unstable.
 
 \section{Experimental setup}
 
-We evaluate the first 4096 tokens from the test split of WikiText-103 \citep{merity2016wikitext} and from one PG-19 test sample \citep{rae2020compressive}, matching the course requirement that PG-19 can be evaluated with a single long sample. The local environment is CPU-only with PyTorch 2.6.0, Transformers 4.56.2, Datasets 3.6.0, and KVPress 0.5.3. Since CUDA is unavailable, FlashAttention is not used as a main experimental condition.
+We evaluate the first 4096 tokens from the test split of WikiText-103 \citep{merity2016wikitext} and from one PG-19 test sample \citep{rae2020compressive}, matching the course requirement that PG-19 can be evaluated with a single long sample. The local environment is Windows on an Intel Core Ultra 7 155H CPU with 16 cores, 22 logical processors, 32 GB RAM, PyTorch 2.6.0, Transformers 4.56.2, Datasets 3.6.0, KVPress 0.5.3, and 16 PyTorch CPU threads. CUDA is unavailable, so FlashAttention is not used as a main experimental condition. Greedy decoding is deterministic; no sampling is used.
 
 The exact reproduction command is:
 \begin{verbatim}
@@ -69,24 +75,24 @@ This script runs baseline, GQA, KVPress-Knorm, and KVPress-StreamingLLM on both 
 
 \section{Results and discussion}
 
-Table~\ref{tab:quality} summarizes quality. The chunked-PPL column should be used to compare baseline and GQA under the same fixed chunking. The cached-PPL column should be used to compare KVPress cache-compression behavior, because it scores the same continuation tokens after prefill. GQA causes a large degradation: WikiText chunked PPL rises from 63.72 to 2289.96, and PG-19 chunked PPL rises from 33.57 to 797.49. This confirms that converting a pretrained MHA checkpoint into 2 cached KV heads by simple averaging is not quality-preserving.
+Table~\ref{tab:quality} summarizes quality. The chunked-PPL column should be used to compare baseline and GQA under fixed chunking. The cached-PPL column should be used to compare KVPress cache-compression behavior, because it scores the same continuation tokens after prefill. GQA causes a large degradation: WikiText chunked PPL rises from 63.72 to 2258.01, and PG-19 chunked PPL rises from 33.57 to 816.70. This confirms that converting a pretrained MHA checkpoint into 2 cached KV heads by simple averaging is not quality-preserving.
 
 \begin{table}[t]
   \caption{Quality metrics. Chunked PPL resets context every 512 tokens over the first 4096 tokens; cached PPL scores tokens 512--767 after a 512-token prefill cache.}
   \label{tab:quality}
   \centering
-  \small
+  \scriptsize
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{llrrrr}
     \toprule
     Dataset & Method & Chunked PPL & Cached PPL & KV events & Avg. comp. \\
     \midrule
     WikiText & Baseline & 63.72 & 13.09 & 0 & -- \\
-    WikiText & GQA-2KV & 2289.96 & 3046.28 & 0 & -- \\
+    WikiText & GQA-2KV & 2258.01 & 3659.00 & 0 & -- \\
     WikiText & KVPress-Knorm & 63.72 & 52.44 & 78 & 0.50 \\
     WikiText & KVPress-StreamingLLM & 63.72 & 61.30 & 78 & 0.50 \\
     PG-19 & Baseline & 33.57 & 29.60 & 0 & -- \\
-    PG-19 & GQA-2KV & 797.49 & 781.27 & 0 & -- \\
+    PG-19 & GQA-2KV & 816.70 & 776.88 & 0 & -- \\
     PG-19 & KVPress-Knorm & 33.57 & 31.76 & 78 & 0.50 \\
     PG-19 & KVPress-StreamingLLM & 33.57 & 29.49 & 78 & 0.50 \\
     \bottomrule
@@ -95,33 +101,74 @@ Table~\ref{tab:quality} summarizes quality. The chunked-PPL column should be use
 
 The WikiText baseline has much lower cached PPL than chunked PPL. To check whether this was a cache-scoring artifact, we recomputed ordinary teacher-forced PPL on the identical continuation slice: the first 512 tokens were used as context and the next 256 tokens were scored. The same-slice teacher-forced PPL was 13.088, while cached autoregressive PPL was 13.089. This small difference indicates that cached scoring matches standard teacher forcing on the same tokens. The gap from the 63.72 chunked PPL is therefore caused by the measurement protocol: chunked PPL averages over 4095 tokens and resets context every 512 tokens, whereas cached PPL uses one fixed local continuation with an intact 512-token prefill. We therefore compare cached PPL only across methods on the same cached-PPL slice, not against chunked PPL as an absolute model-quality number.
 
-Table~\ref{tab:speed} reports mean throughput changes relative to the baseline mean for the same dataset and prompt length. For example, each 512-context entry uses the first 512 tokens as prompt, decodes 64 tokens, averages three measured runs, and divides by the corresponding baseline throughput. On WikiText, KVPress improves 128/512-token generation, but both KVPress variants slow down at 1024 tokens. StreamingLLM gives +35.3\% and +50.3\% at 128 and 512 tokens, respectively. On PG-19, StreamingLLM is close to baseline at 512 tokens and gives a modest +8.7\% at 1024 tokens. GQA stores fewer KV heads but is not a useful accelerator because its quality collapses and its speed is inconsistent.
+Table~\ref{tab:speed} gives the raw speed means and standard deviations used for the relative changes. On WikiText, both KVPress modes improve 128/512-token generation, but slow down at 1024 tokens. On PG-19, StreamingLLM is unstable at 512 tokens and gives a modest +8.7\% at 1024 tokens. GQA stores fewer KV heads but is not a useful accelerator because its quality collapses and its speed is inconsistent.
 
 \begin{table}[t]
-  \caption{Throughput change relative to baseline. Positive values indicate faster generation.}
+  \caption{Speed results. Thr. is generated tokens/s. Relative change is against the baseline with the same dataset and context. A dagger marks changes smaller than one standard deviation and therefore not interpreted as reliable speedups or slowdowns.}
   \label{tab:speed}
   \centering
-  \small
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{llrrr}
+  \scriptsize
+  \setlength{\tabcolsep}{2.2pt}
+  \begin{tabular}{llrrrrr}
     \toprule
-    Dataset & Method & 128 ctx & 512 ctx & 1024 ctx \\
+    Data & Method & Ctx & Thr. & TTFT & TPOT & Rel. \\
     \midrule
-    WikiText & GQA-2KV & -30.7\% & +23.1\% & -42.7\% \\
-    WikiText & KVPress-Knorm & +31.3\% & +49.7\% & -14.3\% \\
-    WikiText & KVPress-StreamingLLM & +35.3\% & +50.3\% & -17.5\% \\
-    PG-19 & GQA-2KV & -6.1\% & -8.8\% & -12.3\% \\
-    PG-19 & KVPress-Knorm & -12.4\% & -14.7\% & -14.0\% \\
-    PG-19 & KVPress-StreamingLLM & -10.6\% & -3.0\% & +8.7\% \\
+    WT & Base & 128 & 50.9$\pm$14.6 & 0.119$\pm$0.084 & 0.0194$\pm$0.0058 & +0.0\% \\
+    WT & GQA-2 & 128 & 41.4$\pm$4.1 & 0.179$\pm$0.060 & 0.0219$\pm$0.0018 & -18.7\%$^\dagger$ \\
+    WT & Knorm & 128 & 66.8$\pm$1.8 & 0.116$\pm$0.014 & 0.0134$\pm$0.0002 & +31.3\% \\
+    WT & Stream & 128 & 68.8$\pm$2.4 & 0.119$\pm$0.019 & 0.0129$\pm$0.0002 & +35.3\% \\
+    WT & Base & 512 & 35.0$\pm$5.0 & 0.569$\pm$0.090 & 0.0204$\pm$0.0051 & +0.0\% \\
+    WT & GQA-2 & 512 & 29.8$\pm$6.3 & 0.448$\pm$0.308 & 0.0281$\pm$0.0040 & -14.8\%$^\dagger$ \\
+    WT & Knorm & 512 & 52.3$\pm$1.2 & 0.333$\pm$0.011 & 0.0141$\pm$0.0006 & +49.7\% \\
+    WT & Stream & 512 & 52.5$\pm$4.9 & 0.306$\pm$0.014 & 0.0146$\pm$0.0020 & +50.3\% \\
+    WT & Base & 1024 & 51.2$\pm$3.4 & 0.325$\pm$0.038 & 0.0147$\pm$0.0007 & +0.0\% \\
+    WT & GQA-2 & 1024 & 25.2$\pm$4.3 & 1.084$\pm$0.359 & 0.0239$\pm$0.0041 & -50.8\% \\
+    WT & Knorm & 1024 & 43.9$\pm$2.4 & 0.523$\pm$0.055 & 0.0149$\pm$0.0022 & -14.3\% \\
+    WT & Stream & 1024 & 42.3$\pm$1.9 & 0.614$\pm$0.032 & 0.0143$\pm$0.0009 & -17.5\% \\
+    PG & Base & 128 & 74.3$\pm$0.4 & 0.083$\pm$0.003 & 0.0124$\pm$0.0000 & +0.0\% \\
+    PG & GQA-2 & 128 & 53.3$\pm$5.1 & 0.138$\pm$0.023 & 0.0170$\pm$0.0017 & -28.3\% \\
+    PG & Knorm & 128 & 65.1$\pm$4.3 & 0.128$\pm$0.026 & 0.0136$\pm$0.0007 & -12.4\% \\
+    PG & Stream & 128 & 66.4$\pm$3.2 & 0.107$\pm$0.005 & 0.0136$\pm$0.0007 & -10.6\% \\
+    PG & Base & 512 & 60.6$\pm$2.6 & 0.236$\pm$0.017 & 0.0130$\pm$0.0006 & +0.0\% \\
+    PG & GQA-2 & 512 & 19.6$\pm$1.3 & 0.775$\pm$0.028 & 0.0396$\pm$0.0039 & -67.6\% \\
+    PG & Knorm & 512 & 51.7$\pm$5.0 & 0.319$\pm$0.023 & 0.0147$\pm$0.0017 & -14.7\% \\
+    PG & Stream & 512 & 58.9$\pm$4.0 & 0.279$\pm$0.037 & 0.0129$\pm$0.0009 & -3.0\%$^\dagger$ \\
+    PG & Base & 1024 & 47.3$\pm$0.4 & 0.422$\pm$0.005 & 0.0148$\pm$0.0002 & +0.0\% \\
+    PG & GQA-2 & 1024 & 18.5$\pm$0.5 & 1.764$\pm$0.015 & 0.0270$\pm$0.0015 & -61.0\% \\
+    PG & Knorm & 1024 & 40.7$\pm$1.1 & 0.619$\pm$0.026 & 0.0152$\pm$0.0004 & -14.0\% \\
+    PG & Stream & 1024 & 51.4$\pm$0.8 & 0.425$\pm$0.015 & 0.0130$\pm$0.0002 & +8.7\% \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-The raw TTFT, TPOT, end-to-end time, throughput means, standard deviations, and per-run values are included in \texttt{outputs/comparison\_speed.*}. The CPU results are mixed: compression helps in some settings but not all, and small deltas should not be over-interpreted. A GPU implementation with fused kernels and larger models would be a more favorable setting for cache compression and reduced-KV attention.
+Table~\ref{tab:ablations} adds two diagnostics. First, setting GQA to 8 KV heads exactly reproduces the baseline PPL, validating the grouped-attention path; reducing to 4 or 2 KV heads creates the quality collapse. Second, the StreamingLLM ratio ablation shows a non-monotonic CPU speed-quality tradeoff: ratio 0.5 is fastest in this slice, while 0.25 preserves better cached PPL but is slower and noisier. Approximate cache memory is computed as layers $\times$ KV heads $\times$ cache tokens $\times$ head dimension $\times$ 2 for K/V $\times$ 4 bytes. For Pythia-70M at 512 positions, the baseline cache is about 12 MB; GQA-2KV and StreamingLLM at ratio 0.75 reduce this to about 3 MB.
+
+\begin{table}[t]
+  \caption{Diagnostic ablations on WikiText with a 512-token prompt. Cache MB is an approximate per-sequence KV cache size in float32.}
+  \label{tab:ablations}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{llrrrr}
+    \toprule
+    Exp. & Setting & Cache MB & Chunked PPL & Cached PPL & Thr. \\
+    \midrule
+    GQA & 8 KV heads & 12.0 & 63.72 & 13.09 & 55.3$\pm$3.4 \\
+    GQA & 4 KV heads & 6.0 & 1240.55 & 1976.45 & 30.4$\pm$4.0 \\
+    GQA & 2 KV heads & 3.0 & 2258.01 & 3659.00 & 31.0$\pm$10.1 \\
+    Stream. & ratio 0.25 & 9.0 & 63.72 & 22.92 & 20.9$\pm$7.7 \\
+    Stream. & ratio 0.50 & 6.0 & 63.72 & 61.30 & 59.6$\pm$1.2 \\
+    Stream. & ratio 0.75 & 3.0 & 63.72 & 62.61 & 13.9$\pm$1.2 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Threats to validity.}
+The main limitation is scale. All experiments are performed on Pythia-70M in a CPU-only environment and use small evaluation slices from WikiText-103 and PG-19. Therefore, the reported speedups should be interpreted as implementation-level evidence under constrained course-project conditions, not as general claims about large-scale GPU inference. Larger models, longer prompts, fused attention kernels, repeated dataset samples, and microprofiling of hooks and gather/scatter overhead may change the relative benefit of KVPress and GQA-style modifications.
 
 \section{Conclusion}
 
-The most reliable positive results are KVPress on WikiText at 128/512-token contexts and StreamingLLM on PG-19 at 1024 tokens, where the 3-run mean throughput improves while the cache is explicitly compressed by 50\%. Reduced-KV GQA is not successful despite storing only 2 KV heads: it sharply worsens perplexity and does not consistently accelerate generation. Overall, training-free KV cache compression is a practical direction for inference acceleration, but its benefit depends on implementation overhead, dataset/runtime behavior, and model size.
+The strongest claim supported by these experiments is limited but useful: training-free KVPress can produce speedups in some CPU settings, but the benefit is context- and dataset-dependent. Naive training-free GQA conversion is not a reliable drop-in acceleration method for Pythia-70M: even though it reduces cache memory, it sharply worsens perplexity and often slows generation.
 
 {\small
 
