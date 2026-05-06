@@ -56,7 +56,7 @@ python .\src\prepare_assets.py --project_root .
 
 指标说明：
 
-- `ppl_metrics` 是 teacher-forced exact PPL，不应用 KVPress 压缩，用于和传统语言模型评测保持一致。
+- `ppl_metrics` 是 chunked teacher-forced PPL：在前 `4096` tokens 上每 `512` tokens 重置一次上下文，不应用 KVPress 压缩，用于比较 baseline/GQA。
 - `cache_ppl_metrics` 是 cached autoregressive next-token PPL，KVPress 会先压缩 prefill 阶段的 KV cache，再用压缩后的 cache 预测后续真实 token；论文中应用这个指标讨论 KVPress 的质量影响。
 - 速度指标使用手动 greedy prefill/decode。`TTFT` 是从 prefill 开始到选出第一个 token 的 wall time；`TPOT` 是后续 decode 时间除以剩余生成 token 数；`throughput` 是 `64` 个生成 token 除以端到端时间。
 
@@ -116,7 +116,7 @@ python .\src\prepare_assets.py --project_root .
 
 - 模型：`models/pythia-70m`
 - 评测 token：`MaxEvalTokens=4096`
-- exact PPL 上下文：`PplContextLen=512`
+- chunked PPL 上下文：`PplContextLen=512`
 - cached PPL：`CachedPplContextLen=512`, `CachedPplEvalTokens=256`
 - 速度上下文：`SpeedContextLens=128,512,1024`
 - 生成长度：`GenNewTokens=64`
@@ -141,7 +141,7 @@ cached PPL sanity check：
 
 主要结论（3-run mean）：
 
-- `GQA` 是负结果：实现已改为真实 reduced-KV cache，`gqa_cache_stats` 显示每层 cache shape 为 `[1, 2, 512, 64]`，但无训练地把 Pythia-70M 改成 2 KV heads 会显著损害质量。WikiText exact PPL 从 `63.72` 上升到 `2289.96`，PG-19 exact PPL 从 `33.57` 上升到 `797.49`。
+- `GQA` 是负结果：实现已改为真实 reduced-KV cache，`gqa_cache_stats` 显示每层 cache shape 为 `[1, 2, 512, 64]`，但无训练地把 Pythia-70M 改成 2 KV heads 会显著损害质量。WikiText chunked PPL 从 `63.72` 上升到 `2289.96`，PG-19 chunked PPL 从 `33.57` 上升到 `797.49`。
 - `KVPress-Knorm` 在 WikiText context length `128/512` 下 throughput 分别提升约 `31.3% / 49.7%`，但在 `1024` 下下降约 `14.3%`。
 - `KVPress-StreamingLLM` 在 WikiText context length `128/512` 下 throughput 分别提升约 `35.3% / 50.3%`，但在 `1024` 下下降约 `17.5%`；在 PG-19 `1024` 下提升约 `8.7%`。
 - WikiText baseline 的 cached PPL 较低不是 cache 评分明显错误：同一 continuation slice 上普通 teacher-forced PPL 为 `13.088025`，cached PPL 为 `13.088739`。
