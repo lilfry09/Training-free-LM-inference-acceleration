@@ -1,3 +1,8 @@
+param(
+  [int]$SpeedRepeats = 3,
+  [int]$SpeedWarmupRuns = 1
+)
+
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
@@ -16,7 +21,9 @@ foreach ($dataset in $datasets) {
       -CachedPplContextLen 512 `
       -CachedPplEvalTokens 256 `
       -SpeedContextLens "128,512,1024" `
-      -GenNewTokens 64
+      -GenNewTokens 64 `
+      -SpeedRepeats $SpeedRepeats `
+      -SpeedWarmupRuns $SpeedWarmupRuns
 
     Write-Host "Running mode=gqa dataset=$dataset split=$split"
     & (Join-Path $PSScriptRoot "run_eval.ps1") `
@@ -29,6 +36,8 @@ foreach ($dataset in $datasets) {
       -CachedPplEvalTokens 256 `
       -SpeedContextLens "128,512,1024" `
       -GenNewTokens 64 `
+      -SpeedRepeats $SpeedRepeats `
+      -SpeedWarmupRuns $SpeedWarmupRuns `
       -GqaKvHeads 2
 
     Write-Host "Running mode=kvpress method=knorm dataset=$dataset split=$split"
@@ -42,6 +51,8 @@ foreach ($dataset in $datasets) {
       -CachedPplEvalTokens 256 `
       -SpeedContextLens "128,512,1024" `
       -GenNewTokens 64 `
+      -SpeedRepeats $SpeedRepeats `
+      -SpeedWarmupRuns $SpeedWarmupRuns `
       -KvpressMethod knorm `
       -KvpressCompressionRatio 0.5 `
       -KvpressNSink 4
@@ -57,6 +68,8 @@ foreach ($dataset in $datasets) {
       -CachedPplEvalTokens 256 `
       -SpeedContextLens "128,512,1024" `
       -GenNewTokens 64 `
+      -SpeedRepeats $SpeedRepeats `
+      -SpeedWarmupRuns $SpeedWarmupRuns `
       -KvpressMethod streamingllm `
       -KvpressCompressionRatio 0.5 `
       -KvpressNSink 4

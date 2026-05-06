@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import statistics
 import time
 from contextlib import nullcontext
 from pathlib import Path
@@ -37,6 +38,8 @@ def parse_args():
     parser.add_argument("--enable_cached_ppl", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--speed_context_lens", type=str, default="128,512,1024")
     parser.add_argument("--gen_new_tokens", type=int, default=64)
+    parser.add_argument("--speed_repeats", type=int, default=3)
+    parser.add_argument("--speed_warmup_runs", type=int, default=1)
     parser.add_argument("--dtype", type=str, default="float32", choices=["float32", "float16", "bfloat16"])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--output_json", type=str, default="outputs/latest_metrics.json")
@@ -86,6 +89,11 @@ def compute_ppl(model, input_ids: torch.Tensor, context_len: int):
 
     ppl = math.exp(total_nll / max(total_tokens, 1))
     return {"ppl": ppl, "nll_sum": total_nll, "tokens": total_tokens}
+
+
+def _sync_if_cuda(device: str) -> None:
+    if device == "cuda":
+        torch.cuda.synchronize()
 
 
 @torch.inference_mode()
@@ -144,48 +152,96 @@ def compute_cached_ppl(
 
 
 @torch.inference_mode()
-def speed_test(model, prompt_ids: torch.Tensor, new_tokens: int, pad_token_id: int, prefill_ctx_factory=None):
+def _speed_run(model, prompt_ids: torch.Tensor, new_tokens: int, device: str, prefill_ctx_factory=None):
     prompt_ids = prompt_ids.unsqueeze(0)
-    attention_mask = torch.ones_like(prompt_ids)
     prefill_ctx_factory = prefill_ctx_factory or (lambda _: nullcontext())
 
+    _sync_if_cuda(device)
     t0 = time.perf_counter()
     with prefill_ctx_factory(model):
-        out_1 = model.generate(
-            prompt_ids,
-            attention_mask=attention_mask,
-            max_new_tokens=1,
-            do_sample=False,
-            use_cache=True,
-            pad_token_id=pad_token_id,
-        )
+        out = model(input_ids=prompt_ids, use_cache=True)
+    next_token = torch.argmax(out.logits[:, -1, :], dim=-1)
+    past_key_values = out.past_key_values
+    _sync_if_cuda(device)
     t1 = time.perf_counter()
     ttft = t1 - t0
 
-    t2 = time.perf_counter()
-    with prefill_ctx_factory(model):
-        out_n = model.generate(
-            prompt_ids,
-            attention_mask=attention_mask,
-            max_new_tokens=new_tokens,
-            do_sample=False,
-            use_cache=True,
-            pad_token_id=pad_token_id,
+    generated = 1
+    decode_start = time.perf_counter()
+    for step in range(1, new_tokens):
+        current_position = torch.tensor(
+            [prompt_ids.shape[-1] + step - 1],
+            device=prompt_ids.device,
+            dtype=torch.long,
         )
-    t3 = time.perf_counter()
-    full_time = t3 - t2
+        out = model(
+            input_ids=next_token.reshape(1, 1),
+            past_key_values=past_key_values,
+            cache_position=current_position,
+            use_cache=True,
+        )
+        past_key_values = out.past_key_values
+        next_token = torch.argmax(out.logits[:, -1, :], dim=-1)
+        generated += 1
+    _sync_if_cuda(device)
+    t2 = time.perf_counter()
 
-    generated = int(out_n.shape[-1] - prompt_ids.shape[-1])
-    tpot = (full_time - ttft) / max(generated - 1, 1)
-    throughput = generated / max(full_time, 1e-8)
+    decode_time = t2 - decode_start
+    e2e_time = t2 - t0
+    tpot = decode_time / max(generated - 1, 1)
+    throughput = generated / max(e2e_time, 1e-8)
 
     return {
         "ttft_sec": ttft,
         "tpot_sec": tpot,
+        "decode_sec": decode_time,
+        "e2e_sec": e2e_time,
         "throughput_tok_per_sec": throughput,
         "generated_tokens": generated,
-        "sample_output_len": int(out_1.shape[-1]),
     }
+
+
+def _mean_and_std(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    if len(values) == 1:
+        return float(values[0]), 0.0
+    return float(statistics.mean(values)), float(statistics.stdev(values))
+
+
+@torch.inference_mode()
+def speed_test(
+    model,
+    prompt_ids: torch.Tensor,
+    new_tokens: int,
+    device: str,
+    prefill_ctx_factory=None,
+    repeats: int = 3,
+    warmup_runs: int = 1,
+):
+    if repeats < 1:
+        raise ValueError("speed repeats must be positive.")
+    if warmup_runs < 0:
+        raise ValueError("speed warmup runs cannot be negative.")
+
+    for _ in range(warmup_runs):
+        _speed_run(model, prompt_ids, new_tokens, device, prefill_ctx_factory=prefill_ctx_factory)
+
+    raw_runs = [
+        _speed_run(model, prompt_ids, new_tokens, device, prefill_ctx_factory=prefill_ctx_factory)
+        for _ in range(repeats)
+    ]
+    result = {
+        "speed_repeats": repeats,
+        "speed_warmup_runs": warmup_runs,
+        "raw_runs": raw_runs,
+        "generated_tokens": raw_runs[0]["generated_tokens"],
+    }
+    for key in ["ttft_sec", "tpot_sec", "decode_sec", "e2e_sec", "throughput_tok_per_sec"]:
+        avg, std = _mean_and_std([float(run[key]) for run in raw_runs])
+        result[key] = avg
+        result[f"{key}_std"] = std
+    return result
 
 
 def summarize_kv_cache_stats(events: list[dict]) -> dict:
@@ -225,12 +281,53 @@ def summarize_kv_cache_stats(events: list[dict]) -> dict:
     }
 
 
+@torch.inference_mode()
+def compute_gqa_cache_stats(model, input_ids: torch.Tensor, context_len: int) -> dict | None:
+    if not hasattr(model, "gpt_neox") or not hasattr(model.gpt_neox.layers[0].attention, "_gqa_kv_heads"):
+        return None
+    prompt_ids = input_ids[:context_len].unsqueeze(0)
+    out = model(input_ids=prompt_ids, use_cache=True)
+    layers = getattr(out.past_key_values, "layers", [])
+    shapes = []
+    for layer_idx, layer in enumerate(layers):
+        keys = getattr(layer, "keys", None)
+        values = getattr(layer, "values", None)
+        if keys is None or values is None:
+            continue
+        shapes.append(
+            {
+                "layer_idx": layer_idx,
+                "key_shape": list(keys.shape),
+                "value_shape": list(values.shape),
+            }
+        )
+    if not shapes:
+        return None
+
+    query_heads = int(model.config.num_attention_heads)
+    kv_heads = int(shapes[0]["key_shape"][1])
+    return {
+        "impl": "reduced_kv_grouped_attention",
+        "num_layers": len(shapes),
+        "query_heads": query_heads,
+        "kv_heads": kv_heads,
+        "kv_head_ratio": kv_heads / query_heads,
+        "context_len": int(shapes[0]["key_shape"][2]),
+        "head_dim": int(shapes[0]["key_shape"][3]),
+        "sample_layer_shapes": shapes[:3],
+    }
+
+
 def build_eval_notes(args, device: str) -> list[str]:
     notes = [
         "ppl_metrics is teacher-forced exact PPL and does not apply KVPress cache compression.",
         "cache_ppl_metrics uses cached autoregressive teacher forcing; KVPress compresses the prefill cache before scoring continuation tokens.",
-        "Speed metrics are single-run CPU measurements unless device is CUDA; interpret small differences cautiously.",
+        "Speed metrics use manual greedy prefill/decode with warmup and repeated runs; TTFT is prefill-to-first-token wall time, TPOT is decode time divided by generated tokens after the first token.",
     ]
+    if "gqa" in args.mode:
+        notes.append(
+            f"GQA uses training-free reduced-KV grouped attention with {args.gqa_kv_heads} cached KV heads."
+        )
     if args.mode == "kvpress":
         notes.append(
             f"KVPress uses method={args.kvpress_method}, compression_ratio={args.kvpress_compression_ratio}, n_sink={args.kvpress_n_sink}."
@@ -298,6 +395,9 @@ def main():
             args.cached_ppl_eval_tokens,
             prefill_ctx_factory=prefill_ctx_factory,
         )
+    gqa_cache_stats = (
+        compute_gqa_cache_stats(model, token_ids, args.cached_ppl_context_len) if "gqa" in args.mode else None
+    )
 
     speed_results = []
     for s in [int(x.strip()) for x in args.speed_context_lens.split(",") if x.strip()]:
@@ -310,8 +410,10 @@ def main():
                     model,
                     token_ids[:s],
                     args.gen_new_tokens,
-                    tokenizer.pad_token_id,
+                    device,
                     prefill_ctx_factory=prefill_ctx_factory,
+                    repeats=args.speed_repeats,
+                    warmup_runs=args.speed_warmup_runs,
                 ),
             }
         )
@@ -323,13 +425,21 @@ def main():
         "device": device,
         "dtype": args.dtype,
         "attn_implementation": attn_impl,
+        "gqa_impl": "reduced_kv_grouped_attention" if "gqa" in args.mode else None,
+        "gqa_num_heads": int(model.config.num_attention_heads) if "gqa" in args.mode else None,
         "gqa_kv_heads": args.gqa_kv_heads if "gqa" in args.mode else None,
+        "gqa_kv_head_ratio": (
+            args.gqa_kv_heads / int(model.config.num_attention_heads) if "gqa" in args.mode else None
+        ),
         "kvpress_method": args.kvpress_method if args.mode == "kvpress" else None,
         "kvpress_compression_ratio": args.kvpress_compression_ratio if args.mode == "kvpress" else None,
         "kvpress_n_sink": args.kvpress_n_sink if args.mode == "kvpress" else None,
         "ppl_metrics": ppl_metrics,
         "cache_ppl_metrics": cache_ppl_metrics,
         "speed_metrics": speed_results,
+        "speed_repeats": args.speed_repeats,
+        "speed_warmup_runs": args.speed_warmup_runs,
+        "gqa_cache_stats": gqa_cache_stats,
         "kv_cache_stats": summarize_kv_cache_stats(kv_cache_events),
         "peak_memory_mb": (torch.cuda.max_memory_allocated() / (1024 * 1024)) if device == "cuda" else None,
         "eval_notes": build_eval_notes(args, device),

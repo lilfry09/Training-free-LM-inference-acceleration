@@ -2,11 +2,10 @@ import types
 from typing import Callable
 
 import torch
+import torch.nn.functional as F
 from transformers.models.gpt_neox.modeling_gpt_neox import (
-    ALL_ATTENTION_FUNCTIONS,
     FlashAttentionKwargs,
     apply_rotary_pos_emb,
-    eager_attention_forward,
 )
 
 
@@ -21,12 +20,40 @@ def _kv_reduce_mean(x: torch.Tensor, kv_heads: int) -> torch.Tensor:
     return x
 
 
-def _kv_expand_repeat(x: torch.Tensor, num_heads: int) -> torch.Tensor:
-    batch, kv_heads, seq_len, dim = x.shape
-    if num_heads % kv_heads != 0:
-        raise ValueError(f"num_heads={num_heads} must be divisible by kv_heads={kv_heads}")
-    group_size = num_heads // kv_heads
-    return x.repeat_interleave(group_size, dim=1)
+def _grouped_attention_forward(
+    module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    head_mask: torch.Tensor | None,
+    output_attentions: bool | None,
+):
+    batch, query_heads, query_len, head_dim = query.shape
+    kv_heads = key.shape[1]
+    key_len = key.shape[-2]
+    if query_heads % kv_heads != 0:
+        raise ValueError(f"query_heads={query_heads} must be divisible by kv_heads={kv_heads}")
+
+    group_size = query_heads // kv_heads
+    grouped_query = query.view(batch, kv_heads, group_size, query_len, head_dim)
+    scores = torch.einsum("bkgld,bksd->bkgls", grouped_query, key) * module.scaling
+
+    if attention_mask is not None:
+        causal_mask = attention_mask[:, :, :, :key_len].unsqueeze(2)
+        scores = scores + causal_mask
+
+    weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(query.dtype)
+    if head_mask is not None:
+        flat_weights = weights.view(batch, query_heads, query_len, key_len)
+        flat_weights = flat_weights * head_mask
+        weights = flat_weights.view(batch, kv_heads, group_size, query_len, key_len)
+
+    weights = F.dropout(weights, p=0.0 if not module.training else module.attention_dropout, training=module.training)
+    attn_output = torch.einsum("bkgls,bksd->bkgld", weights, value)
+    attn_output = attn_output.reshape(batch, query_heads, query_len, head_dim).transpose(1, 2).contiguous()
+    attn_weights = weights.view(batch, query_heads, query_len, key_len) if output_attentions else None
+    return attn_output, attn_weights
 
 
 def _build_gqa_forward() -> Callable:
@@ -64,23 +91,14 @@ def _build_gqa_forward() -> Callable:
             }
             key_states, value_states = layer_past.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        key_states = _kv_expand_repeat(key_states, num_heads)
-        value_states = _kv_expand_repeat(value_states, num_heads)
-
-        attention_interface = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-
-        attn_output, attn_weights = attention_interface(
+        attn_output, attn_weights = _grouped_attention_forward(
             self,
             query_states,
             key_states,
             value_states,
             attention_mask,
-            scaling=self.scaling,
-            dropout=0.0 if not self.training else self.attention_dropout,
             head_mask=head_mask,
-            **kwargs,
+            output_attentions=output_attentions,
         )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
@@ -94,7 +112,11 @@ def enable_gqa(model, kv_heads: int) -> None:
     gqa_forward = _build_gqa_forward()
     for layer in model.gpt_neox.layers:
         attn = layer.attention
+        heads = getattr(attn.config, "num_attention_heads", None) or attn.num_attention_heads
+        if heads % kv_heads != 0:
+            raise ValueError(f"num_heads={heads} must be divisible by kv_heads={kv_heads}")
         attn._gqa_kv_heads = kv_heads
+        attn._gqa_impl = "reduced_kv_grouped_attention"
         attn.forward = types.MethodType(gqa_forward, attn)
 
 
@@ -104,4 +126,3 @@ def choose_attn_impl(mode: str, device: str) -> str:
     if device != "cuda":
         return "sdpa"
     return "flash_attention_2"
-

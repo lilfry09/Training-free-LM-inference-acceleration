@@ -12,6 +12,8 @@ param(
   [bool]$EnableCachedPpl = $true,
   [string]$SpeedContextLens = "128,512,1024",
   [int]$GenNewTokens = 64,
+  [int]$SpeedRepeats = 3,
+  [int]$SpeedWarmupRuns = 1,
   [int]$GqaKvHeads = 2,
   [ValidateSet("knorm", "streamingllm")]
   [string]$KvpressMethod = "knorm",
@@ -41,6 +43,8 @@ $pythonArgs = @(
   "--cached_ppl_eval_tokens", $CachedPplEvalTokens,
   "--speed_context_lens", $SpeedContextLens,
   "--gen_new_tokens", $GenNewTokens,
+  "--speed_repeats", $SpeedRepeats,
+  "--speed_warmup_runs", $SpeedWarmupRuns,
   "--gqa_kv_heads", $GqaKvHeads,
   "--kvpress_method", $KvpressMethod,
   "--kvpress_compression_ratio", $KvpressCompressionRatio,

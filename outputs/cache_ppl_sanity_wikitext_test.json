@@ -31,5 +31,5 @@
     "Same-slice teacher-forced PPL and cached PPL score the identical continuation tokens.",
     "A small same-slice difference supports using cached PPL as a cache-scoring metric, but cached PPL is not directly comparable to full-window exact PPL."
   ],
-  "timestamp": "2026-05-06 15:12:28"
+  "timestamp": "2026-05-06 16:23:01"
 }

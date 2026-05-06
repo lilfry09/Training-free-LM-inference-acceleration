@@ -5,18 +5,21 @@
   "device": "cpu",
   "dtype": "float32",
   "attn_implementation": "sdpa",
+  "gqa_impl": "reduced_kv_grouped_attention",
+  "gqa_num_heads": 8,
   "gqa_kv_heads": 2,
+  "gqa_kv_head_ratio": 0.25,
   "kvpress_method": null,
   "kvpress_compression_ratio": null,
   "kvpress_n_sink": null,
   "ppl_metrics": {
-    "ppl": 816.6922560583414,
-    "nll_sum": 27458.04931640625,
+    "ppl": 797.4852327012052,
+    "nll_sum": 27360.59228515625,
     "tokens": 4095
   },
   "cache_ppl_metrics": {
-    "ppl": 776.8782098328415,
-    "nll_sum": 1703.7526000589132,
+    "ppl": 781.2700882275884,
+    "nll_sum": 1705.1957538947463,
     "tokens": 256,
     "context_len": 512,
     "requested_eval_tokens": 256
@@ -24,29 +27,189 @@
   "speed_metrics": [
     {
       "context_len": 128,
-      "ttft_sec": 0.09202690003439784,
-      "tpot_sec": 0.03824153333248216,
-      "throughput_tok_per_sec": 25.587272890660962,
+      "speed_repeats": 3,
+      "speed_warmup_runs": 1,
+      "raw_runs": [
+        {
+          "ttft_sec": 0.09616780000033032,
+          "tpot_sec": 0.012992803174595807,
+          "decode_sec": 0.8185465999995358,
+          "e2e_sec": 0.9147154000002047,
+          "throughput_tok_per_sec": 69.96711764116542,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.09447499999987485,
+          "tpot_sec": 0.01295258571428262,
+          "decode_sec": 0.8160128999998051,
+          "e2e_sec": 0.9104891999995743,
+          "throughput_tok_per_sec": 70.29188264949208,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.09525649999977759,
+          "tpot_sec": 0.013195774603171605,
+          "decode_sec": 0.8313337999998112,
+          "e2e_sec": 0.9265920999996524,
+          "throughput_tok_per_sec": 69.07030612501877,
+          "generated_tokens": 64
+        }
+      ],
       "generated_tokens": 64,
-      "sample_output_len": 129
+      "ttft_sec": 0.09529976666666092,
+      "ttft_sec_std": 0.0008472289913198786,
+      "tpot_sec": 0.01304705449735001,
+      "tpot_sec_std": 0.0001303557188434798,
+      "decode_sec": 0.8219644333330507,
+      "decode_sec_std": 0.008212410287139248,
+      "e2e_sec": 0.9172655666664772,
+      "e2e_sec_std": 0.008348853790937655,
+      "throughput_tok_per_sec": 69.77643547189209,
+      "throughput_tok_per_sec_std": 0.6327180008069602
     },
     {
       "context_len": 512,
-      "ttft_sec": 1.1728871000232175,
-      "tpot_sec": 0.11251395714325121,
-      "throughput_tok_per_sec": 7.746996271616154,
+      "speed_repeats": 3,
+      "speed_warmup_runs": 1,
+      "raw_runs": [
+        {
+          "ttft_sec": 0.258964399999968,
+          "tpot_sec": 0.014021809523809579,
+          "decode_sec": 0.8833740000000034,
+          "e2e_sec": 1.142339500000162,
+          "throughput_tok_per_sec": 56.025375993731224,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.27105370000026596,
+          "tpot_sec": 0.014063525396826057,
+          "decode_sec": 0.8860021000000415,
+          "e2e_sec": 1.1570568999995885,
+          "throughput_tok_per_sec": 55.3127508249791,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.28406139999970037,
+          "tpot_sec": 0.014128719047611022,
+          "decode_sec": 0.8901092999994944,
+          "e2e_sec": 1.1741716999995333,
+          "throughput_tok_per_sec": 54.50650871591049,
+          "generated_tokens": 64
+        }
+      ],
       "generated_tokens": 64,
-      "sample_output_len": 513
+      "ttft_sec": 0.27135983333331143,
+      "ttft_sec_std": 0.01255130034935993,
+      "tpot_sec": 0.014071351322748886,
+      "tpot_sec_std": 5.388270044527346e-05,
+      "decode_sec": 0.8864951333331798,
+      "decode_sec_std": 0.0033946101280522335,
+      "e2e_sec": 1.1578560333330945,
+      "e2e_sec_std": 0.015931139311534975,
+      "throughput_tok_per_sec": 55.28154517820694,
+      "throughput_tok_per_sec_std": 0.7599143347782642
     },
     {
       "context_len": 1024,
-      "ttft_sec": 2.9025250999839045,
-      "tpot_sec": 0.12637113333339728,
-      "throughput_tok_per_sec": 5.891066901217447,
+      "speed_repeats": 3,
+      "speed_warmup_runs": 1,
+      "raw_runs": [
+        {
+          "ttft_sec": 0.6264508999993268,
+          "tpot_sec": 0.01431451111110373,
+          "decode_sec": 0.901814199999535,
+          "e2e_sec": 1.5282663999996657,
+          "throughput_tok_per_sec": 41.8775155954577,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.6156529999998384,
+          "tpot_sec": 0.01390842539681866,
+          "decode_sec": 0.8762307999995755,
+          "e2e_sec": 1.4918848999996044,
+          "throughput_tok_per_sec": 42.89875177369043,
+          "generated_tokens": 64
+        },
+        {
+          "ttft_sec": 0.6904328999999052,
+          "tpot_sec": 0.014568993650798456,
+          "decode_sec": 0.9178466000003027,
+          "e2e_sec": 1.6082806000003984,
+          "throughput_tok_per_sec": 39.79405086399982,
+          "generated_tokens": 64
+        }
+      ],
       "generated_tokens": 64,
-      "sample_output_len": 1025
+      "ttft_sec": 0.6441789333330235,
+      "ttft_sec_std": 0.0404193114168895,
+      "tpot_sec": 0.014263976719573615,
+      "tpot_sec_std": 0.00033317097425641424,
+      "decode_sec": 0.8986305333331378,
+      "decode_sec_std": 0.02098977137815412,
+      "e2e_sec": 1.5428106333332228,
+      "e2e_sec_std": 0.059545283500159994,
+      "throughput_tok_per_sec": 41.52343941104932,
+      "throughput_tok_per_sec_std": 1.5823461672252126
     }
   ],
+  "speed_repeats": 3,
+  "speed_warmup_runs": 1,
+  "gqa_cache_stats": {
+    "impl": "reduced_kv_grouped_attention",
+    "num_layers": 6,
+    "query_heads": 8,
+    "kv_heads": 2,
+    "kv_head_ratio": 0.25,
+    "context_len": 512,
+    "head_dim": 64,
+    "sample_layer_shapes": [
+      {
+        "layer_idx": 0,
+        "key_shape": [
+          1,
+          2,
+          512,
+          64
+        ],
+        "value_shape": [
+          1,
+          2,
+          512,
+          64
+        ]
+      },
+      {
+        "layer_idx": 1,
+        "key_shape": [
+          1,
+          2,
+          512,
+          64
+        ],
+        "value_shape": [
+          1,
+          2,
+          512,
+          64
+        ]
+      },
+      {
+        "layer_idx": 2,
+        "key_shape": [
+          1,
+          2,
+          512,
+          64
+        ],
+        "value_shape": [
+          1,
+          2,
+          512,
+          64
+        ]
+      }
+    ]
+  },
   "kv_cache_stats": {
     "summary": {
       "num_events": 0
@@ -57,7 +220,8 @@
   "eval_notes": [
     "ppl_metrics is teacher-forced exact PPL and does not apply KVPress cache compression.",
     "cache_ppl_metrics uses cached autoregressive teacher forcing; KVPress compresses the prefill cache before scoring continuation tokens.",
-    "Speed metrics are single-run CPU measurements unless device is CUDA; interpret small differences cautiously."
+    "Speed metrics use manual greedy prefill/decode with warmup and repeated runs; TTFT is prefill-to-first-token wall time, TPOT is decode time divided by generated tokens after the first token.",
+    "GQA uses training-free reduced-KV grouped attention with 2 cached KV heads."
   ],
-  "timestamp": "2026-05-02 23:47:48"
+  "timestamp": "2026-05-06 16:18:04"
 }

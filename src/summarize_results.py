@@ -20,6 +20,8 @@ def method_label(result: dict) -> str:
             label += f"_sink{result.get('kvpress_n_sink')}"
         return label
     if mode == "gqa":
+        if result.get("gqa_impl") == "reduced_kv_grouped_attention":
+            return f"gqa_reduced_kv{result.get('gqa_kv_heads')}"
         return f"gqa_kv{result.get('gqa_kv_heads')}"
     return mode
 
@@ -97,9 +99,15 @@ def build_speed_rows(results: list[dict]) -> list[dict]:
                     "method": method_label(result),
                     "context_len": speed.get("context_len"),
                     "ttft_sec": speed.get("ttft_sec"),
+                    "ttft_sec_std": speed.get("ttft_sec_std"),
                     "tpot_sec": speed.get("tpot_sec"),
+                    "tpot_sec_std": speed.get("tpot_sec_std"),
+                    "e2e_sec": speed.get("e2e_sec"),
+                    "e2e_sec_std": speed.get("e2e_sec_std"),
                     "throughput_tok_per_sec": speed.get("throughput_tok_per_sec"),
+                    "throughput_tok_per_sec_std": speed.get("throughput_tok_per_sec_std"),
                     "generated_tokens": speed.get("generated_tokens"),
+                    "speed_repeats": speed.get("speed_repeats"),
                     "source": result.get("_path"),
                 }
             )
@@ -130,9 +138,15 @@ def main():
         "method",
         "context_len",
         "ttft_sec",
+        "ttft_sec_std",
         "tpot_sec",
+        "tpot_sec_std",
+        "e2e_sec",
+        "e2e_sec_std",
         "throughput_tok_per_sec",
+        "throughput_tok_per_sec_std",
         "generated_tokens",
+        "speed_repeats",
         "source",
     ]
 

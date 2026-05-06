@@ -17,6 +17,22 @@
 pip install -r requirements.txt
 ```
 
+准备模型与数据：
+
+```powershell
+.\scripts\prepare_assets.ps1
+```
+
+该命令会下载 `EleutherAI/pythia-70m` 到 `models/pythia-70m`，下载 `wikitext-103-raw-v1` 到 `datasets/wikitext-103-raw-v1`，并从 Hugging Face `pg19` 中导出每个 split 的第一个样本到 `datasets/pg19_samples`。这些本地资产体积较大，不会提交到 Git。
+
+等价的手动准备方式：
+
+```powershell
+python .\src\prepare_assets.py --project_root .
+```
+
+如果已经有本地模型或某个数据集，可使用 `--skip_model`、`--skip_wikitext`、`--skip_pg19` 跳过对应下载。
+
 ```powershell
 .\scripts\run_eval.ps1 -Mode baseline -Dataset wikitext -Split test
 ```
@@ -26,21 +42,29 @@ pip install -r requirements.txt
 - `ppl_metrics.ppl`
 - `cache_ppl_metrics.ppl`
 - `speed_metrics[*].ttft_sec`
+- `speed_metrics[*].ttft_sec_std`
 - `speed_metrics[*].tpot_sec`
+- `speed_metrics[*].tpot_sec_std`
+- `speed_metrics[*].e2e_sec`
+- `speed_metrics[*].e2e_sec_std`
 - `speed_metrics[*].throughput_tok_per_sec`
+- `speed_metrics[*].throughput_tok_per_sec_std`
+- `speed_metrics[*].raw_runs`
 - `kv_cache_stats`（仅 `kvpress` 会有压缩事件）
+- `gqa_cache_stats`（仅 `gqa` 会显示 reduced-KV cache shape）
 - `peak_memory_mb`（仅 CUDA）
 
 指标说明：
 
 - `ppl_metrics` 是 teacher-forced exact PPL，不应用 KVPress 压缩，用于和传统语言模型评测保持一致。
 - `cache_ppl_metrics` 是 cached autoregressive next-token PPL，KVPress 会先压缩 prefill 阶段的 KV cache，再用压缩后的 cache 预测后续真实 token；论文中应用这个指标讨论 KVPress 的质量影响。
+- 速度指标使用手动 greedy prefill/decode。`TTFT` 是从 prefill 开始到选出第一个 token 的 wall time；`TPOT` 是后续 decode 时间除以剩余生成 token 数；`throughput` 是 `64` 个生成 token 除以端到端时间。
 
 ## 运行模式
 
 - `baseline`: 默认 SDPA attention
 - `flash`: 若 CUDA 可用则尝试 `flash_attention_2`，否则自动回退
-- `gqa`: 推理时对 K/V 做分组平均（无训练近似）
+- `gqa`: 推理时把 8 个 K/V heads 分组平均为 2 个 cached KV heads，并用自定义 grouped attention 直接读取 reduced-KV cache
 - `gqa_flash`: 组合模式（CUDA+flash 才会生效）
 - `kvpress`: KV 压缩模式（当前适配 `knorm` 与 `streamingllm`）
 
@@ -62,6 +86,7 @@ pip install -r requirements.txt
 - 方法：`baseline`, `gqa`, `kvpress knorm r=0.5`, `kvpress streamingllm r=0.5 n_sink=4`
 - 数据：`wikitext`, `pg19`
 - split：`test`
+- speed：1 次 warm-up，3 次 measured runs，输出 mean/std/raw runs
 
 运行结束后会生成：
 
@@ -95,6 +120,7 @@ pip install -r requirements.txt
 - cached PPL：`CachedPplContextLen=512`, `CachedPplEvalTokens=256`
 - 速度上下文：`SpeedContextLens=128,512,1024`
 - 生成长度：`GenNewTokens=64`
+- 速度重复：`SpeedWarmupRuns=1`, `SpeedRepeats=3`
 - 当前实验环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为主实验结果。
 
 cached PPL sanity check：
@@ -113,11 +139,10 @@ cached PPL sanity check：
 - `outputs/comparison_speed.md`
 - `outputs/cache_ppl_sanity_wikitext_test.md`
 
-主要结论：
+主要结论（3-run mean）：
 
-- `GQA` 是负结果：无训练地把 Pythia-70M 的 K/V heads 做分组平均会显著损害质量。WikiText exact PPL 从 `63.72` 上升到 `2258.01`，PG-19 exact PPL 从 `33.57` 上升到 `816.69`。
-- `KVPress-Knorm` 在 WikiText 上只有轻微速度收益，throughput 提升约 `1.8%` 到 `4.2%`。
-- `KVPress-StreamingLLM` 在 WikiText 上效果最好，throughput 在 context length `128/512/1024` 下分别提升约 `26.7% / 21.7% / 27.6%`。
+- `GQA` 是负结果：实现已改为真实 reduced-KV cache，`gqa_cache_stats` 显示每层 cache shape 为 `[1, 2, 512, 64]`，但无训练地把 Pythia-70M 改成 2 KV heads 会显著损害质量。WikiText exact PPL 从 `63.72` 上升到 `2289.96`，PG-19 exact PPL 从 `33.57` 上升到 `797.49`。
+- `KVPress-Knorm` 在 WikiText context length `128/512` 下 throughput 分别提升约 `31.3% / 49.7%`，但在 `1024` 下下降约 `14.3%`。
+- `KVPress-StreamingLLM` 在 WikiText context length `128/512` 下 throughput 分别提升约 `35.3% / 50.3%`，但在 `1024` 下下降约 `17.5%`；在 PG-19 `1024` 下提升约 `8.7%`。
 - WikiText baseline 的 cached PPL 较低不是 cache 评分明显错误：同一 continuation slice 上普通 teacher-forced PPL 为 `13.088025`，cached PPL 为 `13.088739`。
-- 在 PG-19 CPU 单样本测试中，GQA 和 KVPress 都比 baseline 慢，说明小模型 CPU 环境下 Python hook、tensor gather 和 cache 操作开销可能超过 attention 节省。
-- 因此论文结论采用保守表述：KV cache compression 在部分设置下可复现地提升生成速度，但收益依赖数据集、运行环境和实现开销；GQA 在未训练适配下不适合作为成功加速方法。
+- 结论采用保守表述：KV cache compression 在部分 CPU 设置下能提升生成速度，但收益依赖数据集、上下文长度和实现开销；reduced-KV GQA 在未训练适配下不适合作为成功加速方法。
