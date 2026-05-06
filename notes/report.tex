@@ -93,6 +93,8 @@ Table~\ref{tab:quality} summarizes quality. The exact-PPL column should be used 
   \end{tabular}
 \end{table}
 
+The WikiText baseline has much lower cached PPL than full-window exact PPL. To check whether this was a cache-scoring artifact, we recomputed ordinary teacher-forced PPL on the identical continuation slice: the first 512 tokens were used as context and the next 256 tokens were scored. The same-slice teacher-forced PPL was 13.088, while cached autoregressive PPL was 13.089. This small difference indicates that cached scoring matches standard teacher forcing on the same tokens. The gap from the 63.72 exact PPL is therefore caused mainly by the evaluation window: exact PPL averages over 4095 tokens, whereas cached PPL uses a fixed local continuation. We therefore compare cached PPL only across methods on the same cached-PPL slice, not against exact PPL as an absolute model-quality number.
+
 Table~\ref{tab:speed} reports throughput relative to the baseline. On WikiText, KVPress-StreamingLLM gives the clearest acceleration: throughput improves by 26.7\%, 21.7\%, and 27.6\% at context lengths 128, 512, and 1024, respectively. Knorm gives only small gains of 1.8--4.2\%. GQA does not provide reliable speedup and also has poor quality, so it is mainly a negative result.
 
 \begin{table}[t]

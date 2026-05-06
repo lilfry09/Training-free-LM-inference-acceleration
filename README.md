@@ -97,17 +97,27 @@ pip install -r requirements.txt
 - 生成长度：`GenNewTokens=64`
 - 当前实验环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为主实验结果。
 
+cached PPL sanity check：
+
+```powershell
+.\scripts\run_cache_ppl_sanity.ps1 -Dataset wikitext -Split test
+```
+
+该检查在同一段 `512 + 256` token slice 上分别计算普通 teacher-forced continuation PPL 和 cached autoregressive PPL。当前 WikiText 结果为 `13.088025` vs `13.088739`，说明 `cache_ppl_metrics` 与同段 teacher-forced 评分一致；它和 full-window exact PPL 的差异主要来自评测 token 范围不同。
+
 ## 简短结果报告
 
 完整结果见：
 
 - `outputs/comparison_quality.md`
 - `outputs/comparison_speed.md`
+- `outputs/cache_ppl_sanity_wikitext_test.md`
 
 主要结论：
 
 - `GQA` 是负结果：无训练地把 Pythia-70M 的 K/V heads 做分组平均会显著损害质量。WikiText exact PPL 从 `63.72` 上升到 `2258.01`，PG-19 exact PPL 从 `33.57` 上升到 `816.69`。
 - `KVPress-Knorm` 在 WikiText 上只有轻微速度收益，throughput 提升约 `1.8%` 到 `4.2%`。
 - `KVPress-StreamingLLM` 在 WikiText 上效果最好，throughput 在 context length `128/512/1024` 下分别提升约 `26.7% / 21.7% / 27.6%`。
+- WikiText baseline 的 cached PPL 较低不是 cache 评分明显错误：同一 continuation slice 上普通 teacher-forced PPL 为 `13.088025`，cached PPL 为 `13.088739`。
 - 在 PG-19 CPU 单样本测试中，GQA 和 KVPress 都比 baseline 慢，说明小模型 CPU 环境下 Python hook、tensor gather 和 cache 操作开销可能超过 attention 节省。
 - 因此论文结论采用保守表述：KV cache compression 在部分设置下可复现地提升生成速度，但收益依赖数据集、运行环境和实现开销；GQA 在未训练适配下不适合作为成功加速方法。
