@@ -59,6 +59,8 @@ python .\src\prepare_assets.py --project_root .
 - `ppl_metrics` 是 chunked teacher-forced PPL：在前 `4096` tokens 上每 `512` tokens 重置一次上下文，不应用 KVPress 压缩，用于比较 baseline/GQA。
 - `cache_ppl_metrics` 是 cached autoregressive next-token PPL，KVPress 会先压缩 prefill 阶段的 KV cache，再用压缩后的 cache 预测后续真实 token；论文中应用这个指标讨论 KVPress 的质量影响。
 - 速度指标使用手动 greedy prefill/decode。`TTFT` 是从 prefill 开始到选出第一个 token 的 wall time；`TPOT` 是后续 decode 时间除以剩余 `63` 个生成 token 数；`throughput` 是 `64` 个生成 token 除以端到端时间。默认先 warm-up 1 次，再测 3 次并输出 mean/std/raw runs。
+- KVPress 的 compression ratio 按“移除比例”理解：`0.5` 约保留 50% cache，`0.75` 约保留 25% cache。
+- CPU speed variance 较明显，当前 speed 表应作为 indicative evidence，而不是严格统计结论。
 
 ## 运行模式
 
@@ -115,6 +117,17 @@ python .\src\prepare_assets.py --project_root .
 - `outputs/comparison_memory.csv`
 - `outputs/comparison_memory.md`
 
+qualitative generation example：
+
+```powershell
+.\scripts\run_qualitative_examples.ps1
+```
+
+输出：
+
+- `outputs/qualitative_examples.json`
+- `outputs/qualitative_examples.md`
+
 ## 复现实验
 
 所有命令都在 `finalproj` 目录下运行。
@@ -142,6 +155,9 @@ python .\src\prepare_assets.py --project_root .
 - 生成长度：`GenNewTokens=64`
 - 速度重复：`SpeedWarmupRuns=1`, `SpeedRepeats=3`
 - 当前实验环境以 CPU 为主；若无 CUDA，`flash`/`gqa_flash` 会回退到 SDPA，不作为主实验结果。
+- PG-19 使用 Datasets 3.6.0 返回的第一个 `test` example，使用 Pythia tokenizer 后取前 `4096` tokens。
+- full matrix 在本机属于 tens-of-minutes 量级；具体时间会随 CPU 调度和后台负载变化。
+- 可用 `git rev-parse --short HEAD` 记录复现实验使用的仓库 commit。
 
 本机记录的硬件环境：
 
@@ -168,6 +184,7 @@ cached PPL sanity check：
 - `outputs/comparison_kvpress_ablation.md`
 - `outputs/comparison_gqa_sanity.md`
 - `outputs/comparison_memory.md`
+- `outputs/qualitative_examples.md`
 - `outputs/cache_ppl_sanity_wikitext_test.md`
 
 主要结论（3-run mean）：
@@ -178,5 +195,6 @@ cached PPL sanity check：
 - `KVPress-StreamingLLM` 在 WikiText context length `128/512` 下 throughput 分别提升约 `35.3% / 50.3%`，但在 `1024` 下下降约 `17.5%`；在 PG-19 `1024` 下提升约 `8.7%`。
 - `KVPress ratio ablation`（WikiText, 512 prompt）显示 CPU 结果非单调：StreamingLLM ratio `0.25/0.5/0.75` 的 cached PPL 分别为 `22.92/61.30/62.61`，throughput 分别为 `20.88/59.62/13.93` tok/s。
 - 近似 KV cache memory 使用公式 `layers * kv_heads * cache_tokens * head_dim * 2(K/V) * 4 bytes`。Pythia-70M 在 512 tokens、8 KV heads 下约为 `12 MB`；GQA-2KV 或 StreamingLLM ratio `0.75` 约为 `3 MB`。
+- qualitative example 显示 GQA-2KV 会退化成明显重复的 continuation（例如连续输出 `the same as...`），和 PPL 负结果一致。
 - WikiText baseline 的 cached PPL 较低不是 cache 评分明显错误：同一 continuation slice 上普通 teacher-forced PPL 为 `13.088025`，cached PPL 为 `13.088739`。
 - 结论采用保守表述：KV cache compression 在部分 CPU 设置下能提升生成速度，但收益依赖数据集、上下文长度和实现开销；reduced-KV GQA 在未训练适配下不适合作为成功加速方法。
