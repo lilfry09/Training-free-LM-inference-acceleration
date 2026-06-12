@@ -1,5 +1,8 @@
 # Training-Free LM Inference Acceleration
 
+Personal submission repository:
+https://github.com/lilfry09/Training-free-LM-inference-acceleration
+
 ## 目录说明
 
 - `models/`: 本地模型目录，默认使用 `pythia-70m`
