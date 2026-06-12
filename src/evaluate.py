@@ -51,7 +51,6 @@ def resolve_device(name: str) -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"
     return name
 
-
 def resolve_dtype(name: str):
     if name == "float16":
         return torch.float16
